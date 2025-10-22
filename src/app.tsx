@@ -15,10 +15,14 @@ export const App = () => {
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
-            const key = parseInt(event.key);
+            if (!event.altKey) return;
 
-            if (key >= 1 && key <= 4 && key <= numWindows) {
-                chatAreaRefs.current[key - 1]?.focus();
+            const key = event.key;
+            const keyNum = parseInt(key);
+
+            if (keyNum >= 1 && keyNum <= 4) {
+                setNumWindows(keyNum);
+                return;
             }
         }
 
@@ -27,7 +31,14 @@ export const App = () => {
         return () => {
             document.removeEventListener("keydown", handleKeyDown);
         }
+    }, []);
+
+    useEffect(() => {
+        if (chatAreaRefs.current[numWindows - 1]) {
+            chatAreaRefs.current[numWindows - 1]?.focus();
+        }
     }, [numWindows]);
+
 
 
     return (
