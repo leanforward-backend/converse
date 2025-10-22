@@ -33,16 +33,6 @@ export const App = () => {
     return (
         <div className="flex flex-col h-screen w-full">
             <div className="flex justify-center items-center gap-3 p-4 bg-card/50 backdrop-blur-sm border-b border-border">
-                <Button
-                    onClick={() => {
-                        setNumWindows(prev => Math.min(prev + 1, 4));
-                    }}
-                    className="bg-blue-500 hover:bg-blue-600 text-white"
-                    disabled={numWindows >= 4}
-                    variant="secondary"
-                >
-                    More Windows
-                </Button>
 
                 <Button
                     onClick={() => {
@@ -55,15 +45,27 @@ export const App = () => {
                     Less Windows
                 </Button>
 
+                <Button
+                    onClick={() => {
+                        setNumWindows(prev => Math.min(prev + 1, 4));
+                    }}
+                    className="bg-blue-500 hover:bg-blue-600 text-white"
+                    disabled={numWindows >= 4}
+                    variant="secondary"
+                >
+                    More Windows
+                </Button>
                 <ThemeToggle />
             </div>
             <div className="flex-grow animate-fade-in">
                 <Allotment vertical={false}>
                     {Array.from({ length: numWindows }, (_, index) => (
-                        <ChatArea
-                            key={index}
-                            ref={(el) => { chatAreaRefs.current[index] = el; }}
-                        />
+                        <Allotment.Pane key={index} minSize={400}>
+                            <ChatArea
+                                key={index}
+                                ref={(el) => { chatAreaRefs.current[index] = el; }}
+                            />
+                        </Allotment.Pane>
                     ))}
                 </Allotment>
             </div>
