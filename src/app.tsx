@@ -1,10 +1,10 @@
-import './style.css';
 import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
+import { useEffect, useRef, useState } from 'react';
 import { ChatArea } from './components/chat_area';
-import { useEffect, useState, useRef } from 'react';
-import { Button } from './components/ui/button';
 import { ThemeToggle } from './components/theme_toggle';
+import { Button } from './components/ui/button';
+import './style.css';
 
 
 export const App = () => {
@@ -71,7 +71,7 @@ export const App = () => {
             <div className="flex-grow animate-fade-in">
                 <Allotment vertical={false}>
                     {Array.from({ length: numWindows }, (_, index) => (
-                        <Allotment.Pane key={index} minSize={400}>
+                        <Allotment.Pane key={index} minSize={350} >
                             <ChatArea
                                 key={index}
                                 ref={(el) => { chatAreaRefs.current[index] = el; }}
