@@ -1,66 +1,85 @@
-import { useState, FormEvent } from 'react';
-import { GoogleGenAI, HarmBlockThreshold, HarmCategory } from "@google/genai";
-import MarkdownIt from 'markdown-it';
+import { Allotment } from 'allotment';
+import 'allotment/dist/style.css';
+import { useEffect, useRef, useState } from 'react';
+import { ChatArea } from './components/chat_area';
+import { ThemeToggle } from './components/theme_toggle';
+import { Button } from './components/ui/button';
 import './style.css';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
 
-const API_KEY = import.meta.env.VITE_API_KEY;
 
-function App() {
-    const [prompt, setPrompt] = useState('What do you want to talk about?');
-    const [output, setOutput] = useState('(Results will appear here)');
+export const App = () => {
 
-    const handleSubmit = async (ev: FormEvent) => {
-        ev.preventDefault();
-        setOutput('Generating...');
+    const [numWindows, setNumWindows] = useState(1);
 
-        try {
+    const chatAreaRefs = useRef<Array<{ focus: () => void } | null>>([]);
 
-            const ai = new GoogleGenAI({ apiKey: API_KEY });
-            const stream = await ai.models.generateContentStream({
-                model: "gemini-2.0-flash",
-                contents: [
-                    {
-                        role: 'user' as const,
-                        parts: [
-                            { text: prompt }
-                        ]
-                    }
-                ],
-            });
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (!event.altKey) return;
 
-            const buffer: string[] = [];
-            const md = new MarkdownIt();
-            for await (let response of stream) {
-                buffer.push(response.text ?? '');
-                setOutput(md.render(buffer.join('')));
+            const key = event.key;
+            const keyNum = parseInt(key);
+
+            if (keyNum >= 1 && keyNum <= 4) {
+                setNumWindows(keyNum);
+                return;
             }
-        } catch (e) {
-            setOutput(prev => prev + '<hr>' + e);
         }
-    };
+
+        document.addEventListener("keydown", handleKeyDown);
+
+        return () => {
+            document.removeEventListener("keydown", handleKeyDown);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (chatAreaRefs.current[numWindows - 1]) {
+            chatAreaRefs.current[numWindows - 1]?.focus();
+        }
+    }, [numWindows]);
+
+
 
     return (
-        <main>
-            <h1>Talking with the Gemini API</h1>
-            <form onSubmit={handleSubmit}>
-                <p className="output" dangerouslySetInnerHTML={{ __html: output }} />
-                <div className="prompt-box">
-                    <Label>
-                        <Input
-                            name="prompt"
-                            placeholder={prompt}
-                            type="text"
-                            onChange={(e) => setPrompt(e.target.value)}
-                        />
-                    </Label>
-                    <Button type="submit">Go</Button>
-                </div>
-            </form>
-        </main>
-    );
-}
+        <div className="flex flex-col h-screen w-full">
+            <div className="flex justify-center items-center gap-3 p-4 bg-card/50 backdrop-blur-sm border-b border-border">
 
-export default App;
+                <Button
+                    onClick={() => {
+                        setNumWindows(prev => Math.max(prev - 1, 1));
+                    }}
+                    disabled={numWindows <= 1}
+                    className="bg-blue-500 hover:bg-blue-600 text-white"
+
+                >
+                    Less Windows
+                </Button>
+
+                <Button
+                    onClick={() => {
+                        setNumWindows(prev => Math.min(prev + 1, 4));
+                    }}
+                    className="bg-blue-500 hover:bg-blue-600 text-white"
+                    disabled={numWindows >= 4}
+                    variant="secondary"
+                >
+                    More Windows
+                </Button>
+                <ThemeToggle />
+            </div>
+            <div className="flex-grow animate-fade-in">
+                <Allotment vertical={false}>
+                    {Array.from({ length: numWindows }, (_, index) => (
+                        <Allotment.Pane key={index} minSize={350} >
+                            <ChatArea
+                                key={index}
+                                ref={(el) => { chatAreaRefs.current[index] = el; }}
+                            />
+                        </Allotment.Pane>
+                    ))}
+                </Allotment>
+            </div>
+        </div>
+    );
+};
