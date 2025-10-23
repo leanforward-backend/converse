@@ -1,12 +1,13 @@
-import { Allotment } from "allotment";
-import { Label } from "./ui/label";
-import { Input } from "./ui/input";
-import { Button } from "./ui/button";
-import { Spinner } from "./ui/spinner";
-import { useState, FormEvent, forwardRef, useRef, useImperativeHandle, useEffect } from "react";
 import { GoogleGenAI } from "@google/genai";
+import { MessageCircleMore, Mic } from "lucide-react";
 import MarkdownIt from 'markdown-it';
+import { FormEvent, forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 import { ScrollArea } from "./ui/scroll-area";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Spinner } from "./ui/spinner";
 
 const API_KEY = import.meta.env.VITE_API_KEY;
 
@@ -16,6 +17,7 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
     const [output, setOutput] = useState('(Results will appear here)');
     const [isGenerating, setIsGenerating] = useState(false);
     const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+    const [message, setMessage] = useState('');
 
     const inputRef = useRef<HTMLInputElement>(null);
     const scrollViewportRef = useRef<HTMLDivElement>(null);
@@ -49,6 +51,7 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
     }, []);
 
     const handleSubmit = async (ev: FormEvent) => {
+        setMessage(prompt);
         ev.preventDefault();
         setIsGenerating(true);
         setOutput('Generating...');
@@ -82,21 +85,23 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
 
     return (
         <div className='w-full h-full flex flex-col px-10'>
-            <h1 style={{ marginBottom: '1rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '1rem' }}>
+            <h1 className="text-center" style={{ marginBottom: '1rem', borderBottom: '1px solid #e5e7eb', paddingBottom: '1rem' }}>
                 Talking with the Gemini API
             </h1>
 
             <div className="flex-1 overflow-hidden">
                 <ScrollArea ref={scrollViewportRef} className="h-full w-full">
-                    <div className='mx-auto w-full pr-4'>
+                    <div className='mx-auto w-full max-w-4xl pr-4'>
+                        <p className="justify-start text-right mb-8">{message}</p>
+
                         <p className="output" dangerouslySetInnerHTML={{ __html: output }} />
                         <div ref={contentEndRef} />
                     </div>
                 </ScrollArea>
             </div>
 
-            <form onSubmit={handleSubmit} className="mt-4 bg-white">
-                <div className="prompt-box">
+            <form onSubmit={handleSubmit}>
+                <div className="prompt-box flex items-center">
                     <Label>
                         <Input
                             ref={inputRef}
@@ -110,8 +115,20 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
                             value={prompt}
                         />
                     </Label>
+                    <Select>
+                        <SelectTrigger className="w-fit justify-start gap-0">
+                            <SelectValue placeholder={<MessageCircleMore />} />
+                        </SelectTrigger>
+                        <SelectContent className="min-w-0 w-fit p-1">
+                            <SelectGroup>
+                                <SelectItem className="pr-2 pl-2" value="Chat"><MessageCircleMore className="size-4" /></SelectItem>
+                                <SelectItem className="pr-2 pl-2" value="Talk"><Mic className="size-4" /></SelectItem>
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
                     <Button className="bg-blue-500 hover:bg-blue-600 text-white"
-                        type="submit" disabled={isGenerating}>{isGenerating ? <Spinner /> : 'Go'}</Button>
+                        type="submit" disabled={isGenerating}>{isGenerating ? <Spinner /> : 'Go'}
+                    </Button>
                 </div>
             </form>
         </div>
