@@ -13,8 +13,14 @@ export const App = () => {
 
     const chatAreaRefs = useRef<Array<{ focus: () => void } | null>>([]);
 
+    const [currentFocusIndex, setCurrentFocusIndex] = useState(0);
+
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
+
+            if (event.key === 'Alt') {
+                event.preventDefault();
+            }
             if (!event.altKey) return;
 
             const key = event.key;
@@ -26,16 +32,33 @@ export const App = () => {
             }
         }
 
+        const handleWheel = (event: WheelEvent) => {
+            if (event.altKey) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (event.deltaY < 0) {
+                    setCurrentFocusIndex(prev => {
+                        const newIndex = prev > 0 ? prev - 1 : numWindows - 1;
+                        setTimeout(() => chatAreaRefs.current[newIndex]?.focus(), 0);
+                        return newIndex;
+                    });
+                } else if (event.deltaY > 0) {
+                    setCurrentFocusIndex(prev => {
+                        const newIndex = prev < numWindows - 1 ? prev + 1 : 0;
+                        setTimeout(() => chatAreaRefs.current[newIndex]?.focus(), 0);
+                        return newIndex;
+                    });
+                }
+            }
+        }
+
         document.addEventListener("keydown", handleKeyDown);
+        document.addEventListener("wheel", handleWheel, { passive: false });
 
         return () => {
             document.removeEventListener("keydown", handleKeyDown);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (chatAreaRefs.current[numWindows - 1]) {
-            chatAreaRefs.current[numWindows - 1]?.focus();
+            document.removeEventListener("wheel", handleWheel);
         }
     }, [numWindows]);
 
