@@ -2,6 +2,7 @@ import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { MessageCircleMore, Mic } from "lucide-react";
 import MarkdownIt from 'markdown-it';
 import { FormEvent, forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { createBlob, decode, decodeAudioData } from './speach/utils';
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -11,27 +12,7 @@ import { Spinner } from "./ui/spinner";
 
 const API_KEY = import.meta.env.VITE_API_KEY;
 
-// Audio configuration for Live API
-const SAMPLE_RATE = 16000;
-const CHANNELS = 1;
-
-interface LiveAPIMessage {
-    setup?: {
-        model: string;
-        generation_config?: {
-            response_modalities: string[];
-        };
-    };
-    client_content?: {
-        turns?: Array<{
-            role: string;
-            parts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }>;
-        }>;
-        turn_complete: boolean;
-    };
-}
-
-export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
+export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
 
     const [prompt, setPrompt] = useState('');
     const [output, setOutput] = useState('(Results will appear here)');
@@ -41,15 +22,27 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
     const [mode, setMode] = useState<'chat' | 'talk'>('chat');
     const [isRecording, setIsRecording] = useState(false);
 
+    // Add these state variables for transcription and conversation
+    const [currentInputTranscription, setCurrentInputTranscription] = useState('');
+    const [currentOutputTranscription, setCurrentOutputTranscription] = useState('');
+    const [conversation, setConversation] = useState<Array<{ speaker: string, text: string }>>([]);
+
+    // Add these new refs and state for audio scheduling
+    const nextStartTimeRef = useRef(0);
+    const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+    const sessionRef = useRef<any>(null);
+
     const inputRef = useRef<HTMLInputElement>(null);
     const scrollViewportRef = useRef<HTMLDivElement>(null);
     const contentEndRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const mediaStreamRef = useRef<MediaStream | null>(null);
-    const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
-    const audioQueueRef = useRef<AudioBuffer[]>([]);
-    const isPlayingRef = useRef(false);
+
+    // Add a new ref for output audio context
+    const outputAudioContextRef = useRef<AudioContext | null>(null);
+    const processorRef = useRef<ScriptProcessorNode | null>(null);
+    const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
     useImperativeHandle(ref, () => ({
         focus: () => {
@@ -144,38 +137,47 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
             setShouldAutoScroll(true);
             setMessage('🎤 Listening...');
 
+            // Reset audio scheduling
+            nextStartTimeRef.current = 0;
+            audioSourcesRef.current.clear();
+
             // Get microphone access
             const stream = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                }
+                audio: true,
+                video: false
             });
             console.log('✅ Microphone access granted');
             mediaStreamRef.current = stream;
 
+            // Initialize audio contexts (matching index.tsx)
+            const inputAudioContext = new ((window as any).AudioContext ||
+                (window as any).webkitAudioContext)({ sampleRate: 16000 });
+            const outputAudioContext = new ((window as any).AudioContext ||
+                (window as any).webkitAudioContext)({ sampleRate: 24000 });
+
+            audioContextRef.current = inputAudioContext;
+            outputAudioContextRef.current = outputAudioContext;
+
             const ai = new GoogleGenAI({ apiKey: API_KEY });
 
             const session = await ai.live.connect({
-                model: 'models/gemini-2.5-flash-native-audio-preview-09-2025',
+                model: 'gemini-2.5-flash-native-audio-preview-09-2025',
                 config: {
-                    responseModalities: [Modality.TEXT, Modality.AUDIO],
+                    responseModalities: [Modality.AUDIO],
                     speechConfig: {
                         voiceConfig: {
                             prebuiltVoiceConfig: {
-                                voiceName: 'Puck'
+                                voiceName: 'Zephyr'
                             }
                         }
-                    }
+                    },
+                    inputAudioTranscription: {},
+                    outputAudioTranscription: {},
                 },
                 callbacks: {
                     onopen: () => {
-                        console.log('✅ Connected');
+                        console.log('✅ Connected to Live API');
                         setOutput('Listening... speak now!');
-                        // Access session via wsRef after it's assigned
-                        if (wsRef.current) {
-                            setupAudioProcessingForSession(stream, wsRef.current);
-                        }
                     },
                     onmessage: (message: LiveServerMessage) => {
                         handleLiveMessage(message);
@@ -191,8 +193,12 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
                 }
             });
 
-            // Store session ref for cleanup (do this BEFORE onopen fires)
+            // Store session in both refs
             wsRef.current = session as any;
+            sessionRef.current = session;
+
+            // THEN setup audio processing
+            setupAudioProcessingForSession(stream, session);
 
         } catch (error) {
             console.error('❌ Error:', error);
@@ -203,72 +209,108 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
     };
 
     const handleLiveMessage = (message: LiveServerMessage) => {
-        console.log('📦 Message:', message);
+        console.log('📦 Message received:', message);
 
+        // Handle input transcription (what you're saying)
+        if (message.serverContent?.inputTranscription) {
+            console.log('🎤 Input transcription:', message.serverContent.inputTranscription.text);
+            setCurrentInputTranscription(message.serverContent.inputTranscription.text || '');
+        }
+
+        // Handle output transcription (what Gemini is saying)
+        if (message.serverContent?.outputTranscription?.text) {
+            console.log('💬 Output transcription:', message.serverContent.outputTranscription.text);
+            setCurrentOutputTranscription(prev => prev + (message.serverContent?.outputTranscription?.text || ''));
+        }
+
+        // Handle turn complete - save to conversation history
+        if (message.serverContent?.turnComplete) {
+            console.log('✅ Turn complete');
+            setConversation(prev => {
+                const newConversation = [...prev];
+                // Use callback form to get latest state
+                setCurrentInputTranscription(currentInput => {
+                    if (currentInput.trim()) {
+                        newConversation.push({
+                            speaker: 'You',
+                            text: currentInput,
+                        });
+                    }
+                    return ''; // Clear after saving
+                });
+                setCurrentOutputTranscription(currentOutput => {
+                    if (currentOutput.trim()) {
+                        newConversation.push({
+                            speaker: 'Gemini',
+                            text: currentOutput,
+                        });
+                    }
+                    return ''; // Clear after saving
+                });
+                return newConversation;
+            });
+        }
+
+        // Handle audio playback with proper scheduling (matching index.tsx)
         if (message.serverContent?.modelTurn?.parts) {
             for (const part of message.serverContent.modelTurn.parts) {
-                // Handle TEXT
-                if (part.text) {
-                    console.log('✅ Text:', part.text);
-                    const md = new MarkdownIt();
-                    setOutput(prev => {
-                        const newContent = prev === 'Listening... speak now!' ? part.text : prev + part.text;
-                        return md.render(newContent);
-                    });
-                }
-
-                // Handle AUDIO
-                if (part.inlineData?.data && part.inlineData?.mimeType?.includes('audio')) {
-                    console.log('🎵 Audio data received');
-                    playAudioData(part.inlineData.data, part.inlineData.mimeType);
+                const audio = part.inlineData;
+                if (audio && audio.data) {
+                    console.log('🎵 Audio data received, playing...');
+                    playAudioDataFromLive(audio.data);
                 }
             }
         }
+
+        // Handle interruption - stop all playing audio
+        if (message.serverContent?.interrupted) {
+            console.log('⚠️ Interrupted - stopping all audio');
+            audioSourcesRef.current.forEach(source => {
+                try {
+                    source.stop();
+                } catch (e) {
+                    // Already stopped
+                }
+            });
+            audioSourcesRef.current.clear();
+            nextStartTimeRef.current = 0;
+        }
     };
 
-    const setupAudioProcessingForSession = async (stream: MediaStream, session: any) => {
-        const audioContext = new AudioContext();
-        audioContextRef.current = audioContext;
-        const hardwareSampleRate = audioContext.sampleRate;
+    const setupAudioProcessingForSession = (stream: MediaStream, session: any) => {
+        const inputAudioContext = audioContextRef.current;
+        if (!inputAudioContext) {
+            console.error('❌ No input audio context');
+            return;
+        }
 
-        console.log(`Audio: ${hardwareSampleRate}Hz → ${SAMPLE_RATE}Hz`);
+        console.log('🎙️ Setting up audio processing...');
 
-        const source = audioContext.createMediaStreamSource(stream);
-        const processor = audioContext.createScriptProcessor(2048, 1, 1);
+        const source = inputAudioContext.createMediaStreamSource(stream);
+        const processor = inputAudioContext.createScriptProcessor(4096, 1, 1);
 
+        sourceNodeRef.current = source;
+        processorRef.current = processor;
+
+        // Remove the isRecording check - just send audio while connected
         processor.onaudioprocess = (e) => {
-            const inputData = e.inputBuffer.getChannelData(0);
+            const inputBuffer = e.inputBuffer;
+            const pcmData = inputBuffer.getChannelData(0);
 
-            // Downsample to 16kHz
-            const resampleRatio = SAMPLE_RATE / hardwareSampleRate;
-            const targetLength = Math.floor(inputData.length * resampleRatio);
-            const resampled = new Float32Array(targetLength);
-
-            for (let i = 0; i < targetLength; i++) {
-                const srcIndex = i / resampleRatio;
-                const idx = Math.floor(srcIndex);
-                resampled[i] = inputData[Math.min(idx, inputData.length - 1)];
+            // Send to session if it exists
+            if (sessionRef.current) {
+                try {
+                    sessionRef.current.sendRealtimeInput({ media: createBlob(pcmData) });
+                } catch (err) {
+                    console.error('Error sending audio:', err);
+                }
             }
-
-            // Convert to PCM16
-            const pcm = new Int16Array(targetLength);
-            for (let i = 0; i < targetLength; i++) {
-                const s = Math.max(-1, Math.min(1, resampled[i]));
-                pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-
-            // Send via session
-            const bytes = new Uint8Array(pcm.buffer);
-            const base64 = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
-
-            session.sendRealtimeInput([{
-                mimeType: "audio/pcm",
-                data: base64
-            }]);
         };
 
         source.connect(processor);
-        processor.connect(audioContext.destination);
+        processor.connect(inputAudioContext.destination);
+
+        console.log('✅ Audio processing setup complete');
     };
 
     const stopRecording = () => {
@@ -276,29 +318,53 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
         setIsRecording(false);
         setIsGenerating(false);
 
-        // Send turn complete
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            const message: LiveAPIMessage = {
-                client_content: {
-                    turn_complete: true
-                }
-            };
-            console.log('📤 Sending turn_complete');
-            wsRef.current.send(JSON.stringify(message));
-            wsRef.current.close();
+        // Stop all playing audio
+        audioSourcesRef.current.forEach(source => {
+            try {
+                source.stop();
+            } catch (e) {
+                // Already stopped
+            }
+        });
+        audioSourcesRef.current.clear();
+        nextStartTimeRef.current = 0;
+
+        // Disconnect audio nodes first
+        if (processorRef.current && sourceNodeRef.current) {
+            try {
+                processorRef.current.disconnect();
+                sourceNodeRef.current.disconnect();
+            } catch (e) {
+                console.log('Audio nodes already disconnected');
+            }
         }
+        processorRef.current = null;
+        sourceNodeRef.current = null;
+
+        // Close session
+        if (sessionRef.current) {
+            try {
+                sessionRef.current.close();
+            } catch (e) {
+                console.log('Session already closed');
+            }
+        }
+        sessionRef.current = null;
         wsRef.current = null;
 
-        // Stop audio processing
+        // Stop audio contexts
         if (audioContextRef.current) {
-            console.log('Closing AudioContext');
             audioContextRef.current.close();
             audioContextRef.current = null;
         }
 
+        if (outputAudioContextRef.current) {
+            outputAudioContextRef.current.close();
+            outputAudioContextRef.current = null;
+        }
+
         // Stop media stream
         if (mediaStreamRef.current) {
-            console.log('Stopping media stream tracks');
             mediaStreamRef.current.getTracks().forEach(track => track.stop());
             mediaStreamRef.current = null;
         }
@@ -306,46 +372,45 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
         console.log('✅ Recording stopped');
     };
 
-    const playAudioData = async (base64Data: string, mimeType: string) => {
+    const playAudioDataFromLive = async (base64Data: string) => {
         try {
-            if (!audioContextRef.current) {
-                audioContextRef.current = new AudioContext();
+            if (!outputAudioContextRef.current) {
+                outputAudioContextRef.current = new ((window as any).AudioContext ||
+                    (window as any).webkitAudioContext)({ sampleRate: 24000 });
             }
 
-            const audioContext = audioContextRef.current;
-
-            // Decode base64 to ArrayBuffer
-            const binaryString = atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
+            const audioContext = outputAudioContextRef.current;
+            if (!audioContext) {
+                console.error('❌ No output audio context');
+                return;
             }
 
-            let audioBuffer: AudioBuffer;
+            // Use decode and decodeAudioData from utils.ts (same as index.tsx)
+            const audioBuffer = await decodeAudioData(
+                decode(base64Data),
+                audioContext,
+                24000,
+                1,
+            );
 
-            if (mimeType === 'audio/pcm') {
-                // PCM data - convert to AudioBuffer manually
-                const int16Array = new Int16Array(bytes.buffer);
-                const float32Array = new Float32Array(int16Array.length);
+            // Schedule audio properly (matching index.tsx)
+            nextStartTimeRef.current = Math.max(
+                nextStartTimeRef.current,
+                audioContext.currentTime
+            );
 
-                // Convert PCM16 to float32
-                for (let i = 0; i < int16Array.length; i++) {
-                    float32Array[i] = int16Array[i] / 32768.0;
-                }
-
-                // Create AudioBuffer
-                audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000); // 24kHz sample rate
-                audioBuffer.getChannelData(0).set(float32Array);
-            } else {
-                // Other formats (like audio/wav) - decode directly
-                audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
-            }
-
-            // Play the audio
             const source = audioContext.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(audioContext.destination);
-            source.start(0);
+            
+            // Track source for interruption handling
+            audioSourcesRef.current.add(source);
+            source.addEventListener('ended', () => {
+                audioSourcesRef.current.delete(source);
+            });
+
+            source.start(nextStartTimeRef.current);
+            nextStartTimeRef.current = nextStartTimeRef.current + audioBuffer.duration;
 
             console.log('🔊 Playing audio chunk');
         } catch (error) {
@@ -362,9 +427,39 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
             <div className="flex-1 overflow-hidden">
                 <ScrollArea ref={scrollViewportRef} className="h-full w-full">
                     <div className='mx-auto w-full max-w-4xl pr-4'>
-                        <p className="justify-start text-right mb-8">{message}</p>
+                        {mode === 'talk' ? (
+                            <>
+                                {/* Show conversation history */}
+                                {conversation.map((turn, idx) => (
+                                    <div key={idx} className="mb-4">
+                                        <strong className={turn.speaker === 'You' ? 'text-blue-400' : 'text-green-400'}>
+                                            {turn.speaker}
+                                        </strong>
+                                        <div>{turn.text}</div>
+                                    </div>
+                                ))}
 
-                        <p className="output" dangerouslySetInnerHTML={{ __html: output }} />
+                                {/* Show current transcriptions */}
+                                {currentInputTranscription && (
+                                    <div className="mb-4">
+                                        <strong className="text-blue-400">You</strong>
+                                        <div>{currentInputTranscription}</div>
+                                    </div>
+                                )}
+                                {currentOutputTranscription && (
+                                    <div className="mb-4">
+                                        <strong className="text-green-400">Gemini</strong>
+                                        <div>{currentOutputTranscription}</div>
+                                    </div>
+                                )}
+                                {/* <gdm-live-audio /> */}
+                            </>
+                        ) : (
+                            <>
+                                <p className="justify-start text-right mb-8">{message}</p>
+                                <p className="output" dangerouslySetInnerHTML={{ __html: output }} />
+                            </>
+                        )}
                         <div ref={contentEndRef} />
                     </div>
                 </ScrollArea>

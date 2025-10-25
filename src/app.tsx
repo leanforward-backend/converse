@@ -1,5 +1,7 @@
+import { Allotment } from 'allotment';
 import 'allotment/dist/style.css';
 import { useEffect, useRef, useState } from 'react';
+import { ChatArea } from './components/chat_area';
 import './components/speach';
 import { ThemeToggle } from './components/theme_toggle';
 import { Button } from './components/ui/button';
@@ -97,11 +99,7 @@ export const App = () => {
                 </Button>
                 <ThemeToggle />
             </div>
-            <div className="flex-grow animate-fade-in">
-                {/* @ts-expect-error - Lit web component */}
-                <gdm-live-audio />
-            </div>
-            {/* <Allotment vertical={false}>
+            <Allotment vertical={false}>
                 {Array.from({ length: numWindows }, (_, index) => (
                     <Allotment.Pane key={index} minSize={350} >
                         <ChatArea
@@ -110,7 +108,7 @@ export const App = () => {
                         />
                     </Allotment.Pane>
                 ))}
-            </Allotment> */}
+            </Allotment>
         </div>
     );
 };
