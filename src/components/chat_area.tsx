@@ -14,6 +14,9 @@ const API_KEY = import.meta.env.VITE_API_KEY;
 
 export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
 
+    const model = ['gemini-2.0-flash-live-001', 'gemini-2.5-flash-native-audio-preview-09-2025', 'gemini-2.0-flash'];
+    const [selectedModel, setSelectedModel] = useState(model[0]);
+
     const [prompt, setPrompt] = useState('');
     const [output, setOutput] = useState('(Results will appear here)');
     const [isGenerating, setIsGenerating] = useState(false);
@@ -161,7 +164,7 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
             const ai = new GoogleGenAI({ apiKey: API_KEY });
 
             const session = await ai.live.connect({
-                model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+                model: selectedModel,
                 config: {
                     responseModalities: [Modality.AUDIO],
                     speechConfig: {
@@ -402,7 +405,7 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
             const source = audioContext.createBufferSource();
             source.buffer = audioBuffer;
             source.connect(audioContext.destination);
-            
+
             // Track source for interruption handling
             audioSourcesRef.current.add(source);
             source.addEventListener('ended', () => {
@@ -480,6 +483,18 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
                             value={prompt}
                         />
                     </Label>
+                    <Select value={selectedModel} onValueChange={(value) => setSelectedModel(value)}>
+                        <SelectTrigger className="w-25 justify-start gap-0">
+                            <SelectValue placeholder={selectedModel} />
+                        </SelectTrigger>
+                        <SelectContent className="min-w-0 w-fit p-1">
+                            <SelectGroup>
+                                {model.map((m) => (
+                                    <SelectItem className="pr-2 pl-2" value={m}>{m}</SelectItem>
+                                ))}
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
                     <Select value={mode} onValueChange={(value) => setMode(value as 'chat' | 'talk')}>
                         <SelectTrigger className="w-fit justify-start gap-0">
                             <SelectValue placeholder={<MessageCircleMore />} />
