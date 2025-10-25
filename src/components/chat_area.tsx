@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { MessageCircleMore, Mic } from "lucide-react";
 import MarkdownIt from 'markdown-it';
 import { FormEvent, forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -48,6 +48,8 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
     const audioContextRef = useRef<AudioContext | null>(null);
     const mediaStreamRef = useRef<MediaStream | null>(null);
     const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
+    const audioQueueRef = useRef<AudioBuffer[]>([]);
+    const isPlayingRef = useRef(false);
 
     useImperativeHandle(ref, () => ({
         focus: () => {
@@ -152,113 +154,45 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
             console.log('✅ Microphone access granted');
             mediaStreamRef.current = stream;
 
-            // Try the correct model name for live API
-            const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
-            console.log('🔌 Connecting to WebSocket...');
-            const ws = new WebSocket(wsUrl);
-            wsRef.current = ws;
+            const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-            ws.onopen = async () => {
-                console.log('✅ WebSocket connected');
-
-                // Simplified setup - try with minimal config first
-                const setupMessage = {
-                    setup: {
-                        model: "models/gemini-2.0-flash-exp"
-                    }
-                };
-                console.log('📤 Sending setup:', JSON.stringify(setupMessage));
-                ws.send(JSON.stringify(setupMessage));
-
-                // Wait for setup complete before starting audio
-                setTimeout(async () => {
-                    console.log('🎵 Setting up audio processing...');
-                    await setupAudioProcessing(stream, ws);
-                }, 1000);
-            };
-
-            ws.onmessage = async (event) => {
-                try {
-                    let response;
-                    if (event.data instanceof Blob) {
-                        const text = await event.data.text();
-                        console.log('📄 Blob text:', text);
-                        response = JSON.parse(text);
-                    } else {
-                        response = JSON.parse(event.data);
-                    }
-
-                    console.log('📦 Full response:', JSON.stringify(response, null, 2));
-
-                    if (response.setupComplete) {
-                        console.log('✅ Setup complete');
-                        setOutput('Listening... speak now!');
-                    }
-
-                    // Handle server content - THIS IS THE KEY PART
-                    if (response.serverContent) {
-                        console.log('📬 Server content received:', JSON.stringify(response.serverContent, null, 2));
-
-                        // Extract text from modelTurn
-                        if (response.serverContent.modelTurn) {
-                            const modelTurn = response.serverContent.modelTurn;
-                            console.log('🤖 Model turn:', JSON.stringify(modelTurn, null, 2));
-
-                            if (modelTurn.parts && Array.isArray(modelTurn.parts)) {
-                                for (const part of modelTurn.parts) {
-                                    console.log('📝 Part:', JSON.stringify(part, null, 2));
-
-                                    if (part.text) {
-                                        console.log('✅ Found text:', part.text);
-                                        const md = new MarkdownIt();
-                                        setOutput(prev => {
-                                            const newContent = prev === 'Listening... speak now!' ? part.text : prev + part.text;
-                                            return md.render(newContent);
-                                        });
-                                    }
-
-                                    // Also check for inlineData with text
-                                    if (part.inlineData && part.inlineData.mimeType && part.inlineData.mimeType.includes('text')) {
-                                        console.log('✅ Found inline text data');
-                                        // Decode if needed
-                                    }
-                                }
+            const session = await ai.live.connect({
+                model: 'models/gemini-2.5-flash-native-audio-preview-09-2025',
+                config: {
+                    responseModalities: [Modality.TEXT, Modality.AUDIO],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: {
+                                voiceName: 'Puck'
                             }
                         }
-
-                        // Also check for other possible text locations
-                        if (response.serverContent.text) {
-                            console.log('✅ Direct text:', response.serverContent.text);
-                            setOutput(response.serverContent.text);
-                        }
-
-                        if (response.serverContent.turnComplete) {
-                            console.log('✅ Turn complete');
-                        }
                     }
-
-                    if (response.error) {
-                        console.error('❌ Error:', response.error);
-                        setOutput(`Error: ${JSON.stringify(response.error)}`);
+                },
+                callbacks: {
+                    onopen: () => {
+                        console.log('✅ Connected');
+                        setOutput('Listening... speak now!');
+                        // Access session via wsRef after it's assigned
+                        if (wsRef.current) {
+                            setupAudioProcessingForSession(stream, wsRef.current);
+                        }
+                    },
+                    onmessage: (message: LiveServerMessage) => {
+                        handleLiveMessage(message);
+                    },
+                    onerror: (e: ErrorEvent) => {
+                        console.error('❌ Error:', e.message);
+                        setOutput(`Error: ${e.message}`);
+                    },
+                    onclose: (e: CloseEvent) => {
+                        console.log('🔌 Closed:', e.reason);
+                        stopRecording();
                     }
-
-                } catch (e) {
-                    console.error('❌ Parse error:', e);
-                    console.error('Event data:', event.data);
                 }
-            };
+            });
 
-            ws.onerror = (error) => {
-                console.error('❌ WebSocket error:', error);
-            };
-
-            ws.onclose = (event) => {
-                console.log(`🔌 WebSocket closed: code=${event.code}, reason="${event.reason}"`);
-                if (event.code === 1007) {
-                    setOutput('Error: Invalid message format sent to API');
-                }
-                stopRecording();
-            };
+            // Store session ref for cleanup (do this BEFORE onopen fires)
+            wsRef.current = session as any;
 
         } catch (error) {
             console.error('❌ Error:', error);
@@ -268,7 +202,31 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
         }
     };
 
-    const setupAudioProcessing = async (stream: MediaStream, ws: WebSocket) => {
+    const handleLiveMessage = (message: LiveServerMessage) => {
+        console.log('📦 Message:', message);
+
+        if (message.serverContent?.modelTurn?.parts) {
+            for (const part of message.serverContent.modelTurn.parts) {
+                // Handle TEXT
+                if (part.text) {
+                    console.log('✅ Text:', part.text);
+                    const md = new MarkdownIt();
+                    setOutput(prev => {
+                        const newContent = prev === 'Listening... speak now!' ? part.text : prev + part.text;
+                        return md.render(newContent);
+                    });
+                }
+
+                // Handle AUDIO
+                if (part.inlineData?.data && part.inlineData?.mimeType?.includes('audio')) {
+                    console.log('🎵 Audio data received');
+                    playAudioData(part.inlineData.data, part.inlineData.mimeType);
+                }
+            }
+        }
+    };
+
+    const setupAudioProcessingForSession = async (stream: MediaStream, session: any) => {
         const audioContext = new AudioContext();
         audioContextRef.current = audioContext;
         const hardwareSampleRate = audioContext.sampleRate;
@@ -276,13 +234,9 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
         console.log(`Audio: ${hardwareSampleRate}Hz → ${SAMPLE_RATE}Hz`);
 
         const source = audioContext.createMediaStreamSource(stream);
-        const processor = audioContext.createScriptProcessor(2048, 1, 1); // Smaller buffer
-
-        let chunkCount = 0;
+        const processor = audioContext.createScriptProcessor(2048, 1, 1);
 
         processor.onaudioprocess = (e) => {
-            if (ws.readyState !== WebSocket.OPEN) return;
-
             const inputData = e.inputBuffer.getChannelData(0);
 
             // Downsample to 16kHz
@@ -303,28 +257,14 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
                 pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
-            // Send as base64
-            try {
-                const bytes = new Uint8Array(pcm.buffer);
-                const base64 = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
+            // Send via session
+            const bytes = new Uint8Array(pcm.buffer);
+            const base64 = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
 
-                // Simpler message structure
-                ws.send(JSON.stringify({
-                    realtime_input: {
-                        media_chunks: [{
-                            mime_type: "audio/pcm",
-                            data: base64
-                        }]
-                    }
-                }));
-
-                chunkCount++;
-                if (chunkCount % 50 === 0) {
-                    console.log(`🎵 Sent ${chunkCount} chunks (${targetLength} samples each)`);
-                }
-            } catch (err) {
-                console.error('Send error:', err);
-            }
+            session.sendRealtimeInput([{
+                mimeType: "audio/pcm",
+                data: base64
+            }]);
         };
 
         source.connect(processor);
@@ -364,6 +304,53 @@ export const ChatArea = forwardRef<{ focus: () => void }>((props, ref) => {
         }
 
         console.log('✅ Recording stopped');
+    };
+
+    const playAudioData = async (base64Data: string, mimeType: string) => {
+        try {
+            if (!audioContextRef.current) {
+                audioContextRef.current = new AudioContext();
+            }
+
+            const audioContext = audioContextRef.current;
+
+            // Decode base64 to ArrayBuffer
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            let audioBuffer: AudioBuffer;
+
+            if (mimeType === 'audio/pcm') {
+                // PCM data - convert to AudioBuffer manually
+                const int16Array = new Int16Array(bytes.buffer);
+                const float32Array = new Float32Array(int16Array.length);
+
+                // Convert PCM16 to float32
+                for (let i = 0; i < int16Array.length; i++) {
+                    float32Array[i] = int16Array[i] / 32768.0;
+                }
+
+                // Create AudioBuffer
+                audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000); // 24kHz sample rate
+                audioBuffer.getChannelData(0).set(float32Array);
+            } else {
+                // Other formats (like audio/wav) - decode directly
+                audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+            }
+
+            // Play the audio
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            source.start(0);
+
+            console.log('🔊 Playing audio chunk');
+        } catch (error) {
+            console.error('❌ Error playing audio:', error);
+        }
     };
 
     return (
