@@ -4,11 +4,13 @@
 @custom-variant dark (&:is(.dark *));
 
 .prompt-box {
-  margin: 24px 0;
+  margin: 24px auto;
   width: 100%;
+  max-width: 50vw;
   display: flex;
   gap: 8px;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: space-between;
 }
 
 label {
@@ -37,87 +39,57 @@ h1::before {
   background-size: cover;
 }
 
-@theme inline {
+@theme {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
+  
+  --color-background: oklch(100% 0 0);
+  --color-foreground: oklch(15% 0 0);
+  --color-card: oklch(100% 0 0);
+  --color-card-foreground: oklch(15% 0 0);
+  --color-popover: oklch(100% 0 0);
+  --color-popover-foreground: oklch(15% 0 0);
+  --color-primary: oklch(64% 0.18 250);
+  --color-primary-foreground: oklch(100% 0 0);
+  --color-secondary: oklch(96% 0.02 250);
+  --color-secondary-foreground: oklch(30% 0.18 250);
+  --color-muted: oklch(97% 0.01 250);
+  --color-muted-foreground: oklch(54% 0.02 250);
+  --color-accent: oklch(96% 0.02 250);
+  --color-accent-foreground: oklch(30% 0.18 250);
+  --color-destructive: oklch(58% 0.22 25);
+  --color-destructive-foreground: oklch(100% 0 0);
+  --color-border: oklch(92% 0.01 250);
+  --color-input: oklch(92% 0.01 250);
+  --color-ring: oklch(64% 0.18 250);
 }
 
 :root {
   --radius: 0.5rem;
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --primary: 217 91% 60%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 217 70% 92%;
-  --secondary-foreground: 217 91% 30%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 217 91% 95%;
-  --accent-foreground: 217 91% 30%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 217 91% 60%;
 }
 
 .dark {
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
-  --card: 222 47% 15%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222 47% 15%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 217 91% 60%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 217 50% 25%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217 50% 25%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 50%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217 32.6% 20%;
-  --input: 217 32.6% 20%;
-  --ring: 217 91% 60%;
+  --color-background: oklch(20% 0.02 250);
+  --color-foreground: oklch(98% 0.01 250);
+  --color-card: oklch(23% 0.02 250);
+  --color-card-foreground: oklch(98% 0.01 250);
+  --color-popover: oklch(23% 0.02 250);
+  --color-popover-foreground: oklch(98% 0.01 250);
+  --color-primary: oklch(64% 0.18 250);
+  --color-primary-foreground: oklch(100% 0 0);
+  --color-secondary: oklch(30% 0.05 250);
+  --color-secondary-foreground: oklch(98% 0.01 250);
+  --color-muted: oklch(26% 0.03 250);
+  --color-muted-foreground: oklch(70% 0.03 250);
+  --color-accent: oklch(30% 0.05 250);
+  --color-accent-foreground: oklch(98% 0.01 250);
+  --color-destructive: oklch(55% 0.22 25);
+  --color-destructive-foreground: oklch(98% 0.01 250);
+  --color-border: oklch(28% 0.03 250);
+  --color-input: oklch(28% 0.03 250);
+  --color-ring: oklch(64% 0.18 250);
 }
 
 @layer base {
@@ -133,18 +105,14 @@ h1::before {
     @apply bg-background text-foreground antialiased;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
-    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-      color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   button,
   input,
   textarea,
-  select,
-  div[class*="bg-"],
-  div[class*="border-"] {
-    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-      border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-      color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  select {
+    transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
