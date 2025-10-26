@@ -25,12 +25,10 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
     const [mode, setMode] = useState<'chat' | 'talk'>('chat');
     const [isRecording, setIsRecording] = useState(false);
 
-    // Add these state variables for transcription and conversation
     const [currentInputTranscription, setCurrentInputTranscription] = useState('');
     const [currentOutputTranscription, setCurrentOutputTranscription] = useState('');
     const [conversation, setConversation] = useState<Array<{ speaker: string, text: string }>>([]);
 
-    // Add these new refs and state for audio scheduling
     const nextStartTimeRef = useRef(0);
     const audioSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
     const sessionRef = useRef<any>(null);
@@ -42,7 +40,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
     const audioContextRef = useRef<AudioContext | null>(null);
     const mediaStreamRef = useRef<MediaStream | null>(null);
 
-    // Add a new ref for output audio context
     const outputAudioContextRef = useRef<AudioContext | null>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
     const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -74,7 +71,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
         return () => viewport.removeEventListener('scroll', handleScroll);
     }, []);
 
-    // Cleanup on unmount
     useEffect(() => {
         return () => {
             stopRecording();
@@ -140,11 +136,9 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
             setShouldAutoScroll(true);
             setMessage('🎤 Listening...');
 
-            // Reset audio scheduling
             nextStartTimeRef.current = 0;
             audioSourcesRef.current.clear();
 
-            // Get microphone access
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: true,
                 video: false
@@ -152,7 +146,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
             console.log('✅ Microphone access granted');
             mediaStreamRef.current = stream;
 
-            // Initialize audio contexts (matching index.tsx)
             const inputAudioContext = new ((window as any).AudioContext ||
                 (window as any).webkitAudioContext)({ sampleRate: 16000 });
             const outputAudioContext = new ((window as any).AudioContext ||
@@ -196,11 +189,9 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
                 }
             });
 
-            // Store session in both refs
             wsRef.current = session as any;
             sessionRef.current = session;
 
-            // THEN setup audio processing
             setupAudioProcessingForSession(stream, session);
 
         } catch (error) {
@@ -214,24 +205,20 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
     const handleLiveMessage = (message: LiveServerMessage) => {
         console.log('📦 Message received:', message);
 
-        // Handle input transcription (what you're saying)
         if (message.serverContent?.inputTranscription) {
             console.log('🎤 Input transcription:', message.serverContent.inputTranscription.text);
             setCurrentInputTranscription(message.serverContent.inputTranscription.text || '');
         }
 
-        // Handle output transcription (what Gemini is saying)
         if (message.serverContent?.outputTranscription?.text) {
             console.log('💬 Output transcription:', message.serverContent.outputTranscription.text);
             setCurrentOutputTranscription(prev => prev + (message.serverContent?.outputTranscription?.text || ''));
         }
 
-        // Handle turn complete - save to conversation history
         if (message.serverContent?.turnComplete) {
             console.log('✅ Turn complete');
             setConversation(prev => {
                 const newConversation = [...prev];
-                // Use callback form to get latest state
                 setCurrentInputTranscription(currentInput => {
                     if (currentInput.trim()) {
                         newConversation.push({
@@ -239,7 +226,7 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
                             text: currentInput,
                         });
                     }
-                    return ''; // Clear after saving
+                    return '';
                 });
                 setCurrentOutputTranscription(currentOutput => {
                     if (currentOutput.trim()) {
@@ -248,13 +235,12 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
                             text: currentOutput,
                         });
                     }
-                    return ''; // Clear after saving
+                    return '';
                 });
                 return newConversation;
             });
         }
 
-        // Handle audio playback with proper scheduling (matching index.tsx)
         if (message.serverContent?.modelTurn?.parts) {
             for (const part of message.serverContent.modelTurn.parts) {
                 const audio = part.inlineData;
@@ -265,14 +251,12 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
             }
         }
 
-        // Handle interruption - stop all playing audio
         if (message.serverContent?.interrupted) {
             console.log('⚠️ Interrupted - stopping all audio');
             audioSourcesRef.current.forEach(source => {
                 try {
                     source.stop();
                 } catch (e) {
-                    // Already stopped
                 }
             });
             audioSourcesRef.current.clear();
@@ -295,12 +279,10 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
         sourceNodeRef.current = source;
         processorRef.current = processor;
 
-        // Remove the isRecording check - just send audio while connected
         processor.onaudioprocess = (e) => {
             const inputBuffer = e.inputBuffer;
             const pcmData = inputBuffer.getChannelData(0);
 
-            // Send to session if it exists
             if (sessionRef.current) {
                 try {
                     sessionRef.current.sendRealtimeInput({ media: createBlob(pcmData) });
@@ -321,18 +303,15 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
         setIsRecording(false);
         setIsGenerating(false);
 
-        // Stop all playing audio
         audioSourcesRef.current.forEach(source => {
             try {
                 source.stop();
             } catch (e) {
-                // Already stopped
             }
         });
         audioSourcesRef.current.clear();
         nextStartTimeRef.current = 0;
 
-        // Disconnect audio nodes first
         if (processorRef.current && sourceNodeRef.current) {
             try {
                 processorRef.current.disconnect();
@@ -344,7 +323,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
         processorRef.current = null;
         sourceNodeRef.current = null;
 
-        // Close session
         if (sessionRef.current) {
             try {
                 sessionRef.current.close();
@@ -355,7 +333,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
         sessionRef.current = null;
         wsRef.current = null;
 
-        // Stop audio contexts
         if (audioContextRef.current) {
             audioContextRef.current.close();
             audioContextRef.current = null;
@@ -366,7 +343,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
             outputAudioContextRef.current = null;
         }
 
-        // Stop media stream
         if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach(track => track.stop());
             mediaStreamRef.current = null;
@@ -388,7 +364,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
                 return;
             }
 
-            // Use decode and decodeAudioData from utils.ts (same as index.tsx)
             const audioBuffer = await decodeAudioData(
                 decode(base64Data),
                 audioContext,
@@ -396,7 +371,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
                 1,
             );
 
-            // Schedule audio properly (matching index.tsx)
             nextStartTimeRef.current = Math.max(
                 nextStartTimeRef.current,
                 audioContext.currentTime
@@ -406,7 +380,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
             source.buffer = audioBuffer;
             source.connect(audioContext.destination);
 
-            // Track source for interruption handling
             audioSourcesRef.current.add(source);
             source.addEventListener('ended', () => {
                 audioSourcesRef.current.delete(source);
@@ -430,9 +403,8 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
             <div className="flex-1 overflow-hidden">
                 <ScrollArea ref={scrollViewportRef} className="h-full w-full">
                     <div className='mx-auto w-full max-w-4xl pr-4'>
-                        {mode === 'talk' ? (
+                        {mode === 'talk' && isRecording ? (
                             <>
-                                {/* Show conversation history */}
                                 {conversation.map((turn, idx) => (
                                     <div key={idx} className="mb-4">
                                         <strong className={turn.speaker === 'You' ? 'text-blue-400' : 'text-green-400'}>
@@ -442,7 +414,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
                                     </div>
                                 ))}
 
-                                {/* Show current transcriptions */}
                                 {currentInputTranscription && (
                                     <div className="mb-4">
                                         <strong className="text-blue-400">You</strong>
@@ -455,7 +426,6 @@ export const ChatArea = forwardRef<{ focus: () => void }>((_, ref) => {
                                         <div>{currentOutputTranscription}</div>
                                     </div>
                                 )}
-                                {/* <gdm-live-audio /> */}
                             </>
                         ) : (
                             <>
