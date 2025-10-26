@@ -19,12 +19,10 @@ export const ThemeToggle = () => {
 
     const toggleTheme = () => {
         if (isDarkMode) {
-            // Currently dark, switch to light
             document.documentElement.classList.remove("dark");
             localStorage.setItem("theme", "light");
             setIsDarkMode(false);
         } else {
-            // Currently light, switch to dark
             document.documentElement.classList.add("dark");
             localStorage.setItem("theme", "dark");
             setIsDarkMode(true);
