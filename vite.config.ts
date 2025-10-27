@@ -4,6 +4,7 @@ import path from "path"
 import { defineConfig } from "vite"
 
 export default defineConfig({
+    base: '/converse/', // Add this line - use your repo name
     plugins: [
         react({
             babel: {
